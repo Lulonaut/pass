@@ -5,7 +5,7 @@
 #include <malloc.h>
 
 //int string_eq(char *strings[], char check[], ...);
-int string_eq(char check[], ...);
+int string_eq(char *str, ...);
 
 
 int main() {
@@ -46,7 +46,7 @@ int main() {
 
     while (1) {
         char input[1000];
-        printf(">");
+        puts(">");
         fgets(input, 1000, stdin);
         //fgets also gets the \n at the end
         input[strlen(input) - 1] = '\0';
@@ -95,5 +95,6 @@ int string_eq(char *str, ...) {
             str = va_arg(arg, char*);
         }
     }
+    ((void) arg);
     return 1;
 }
