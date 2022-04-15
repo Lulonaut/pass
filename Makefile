@@ -1,7 +1,7 @@
 CC=gcc
 CFLAGS=-std=gnu11 -Wall -Wextra -O3
 SRC=src/main.c
-LIBS=-lcjson
+LIBS=-lcjson -lcrypt -lssl -lcrypto
 OUT=pa
 
 all:
