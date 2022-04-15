@@ -58,7 +58,7 @@ int main() {
         cJSON_AddObjectToObject(json, "passwords");
     }
     if (!cJSON_HasObjectItem(json, "master_password")) {
-        puts("You don't have a master master_password set.\nPlease enter one now:");
+        puts("You don't have a master password set.\nPlease enter one now:");
         char *password = get_password("Password:");
 
         char *salt = crypt_gensalt("$y$", 0, NULL, -1);
