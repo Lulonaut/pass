@@ -12,9 +12,11 @@
 
 #define FILE_NAME "pass.json"
 #define DEBUG 0
-#define PORT        7926
+#define PORT        7922
 #define MAX_LINE    1000
 #define LISTENQ     1024
+
+int client_conn;
 
 int string_eq(char *str, ...);
 
@@ -38,10 +40,15 @@ void add_entry(char buffer[], cJSON *json, AES_KEY enc_key);
 
 void get_entry(char buffer[], cJSON *json, AES_KEY dec_key);
 
+void print_usage(char *prog_name);
+
+void cleanup();
+
 int main(int argc, char **argv) {
     if (argc == 2 && strcmp(argv[1], "--daemon") == 0) {
         FILE *fp;
         fp = fopen(FILE_NAME, "r");
+        fflush(stdout);
         if (fp == 0) {
             FILE *new_file;
             new_file = fopen(FILE_NAME, "w");
@@ -96,30 +103,11 @@ int main(int argc, char **argv) {
             }
         }
         unsigned char key[128];
-        puts(master_password);
         strcpy(key, master_password);
 
         AES_KEY enc_key, dec_key;
         AES_set_encrypt_key(key, 128, &enc_key);
         AES_set_decrypt_key(key, 128, &dec_key);
-        while (0) {
-            cJSON *passwords = cJSON_GetObjectItem(json, "passwords");
-            char *name = "testing2";
-            if (cJSON_HasObjectItem(passwords, name)) {
-                cJSON *entry = cJSON_GetObjectItem(passwords, name);
-                cJSON *password_entry = cJSON_GetObjectItem(entry, "password");
-                char *encrypted_password = cJSON_GetStringValue(password_entry);
-                char *base64_dec = base64decode(encrypted_password, strlen(encrypted_password));
-
-                unsigned char to_decrypt[128];
-                unsigned char dec_out[80];
-                strcpy(to_decrypt, base64_dec);
-                AES_decrypt(to_decrypt, dec_out, &dec_key);
-                puts(dec_out);
-            } else {
-                puts("Unknown key.");
-            }
-        }
 
         int list_s, conn_s;
         struct sockaddr_in servaddr;
@@ -168,12 +156,11 @@ int main(int argc, char **argv) {
             close(conn_s);
         }
     } else {
-        int conn_s;
         struct sockaddr_in servaddr;
         char buffer[MAX_LINE];
         char *szAddress = "127.0.0.1";
 
-        if ((conn_s = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        if ((client_conn = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
             fputs("Error creating socket\n", stderr);
             return 1;
         }
@@ -184,20 +171,49 @@ int main(int argc, char **argv) {
 
         inet_aton(szAddress, &servaddr.sin_addr);
 
-        if (connect(conn_s, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0) {
+        if (connect(client_conn, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0) {
             printf("Daemon is not running. Start it with: %s --daemon\n", argv[0]);
             return 1;
         }
+        atexit(cleanup);
 
+        if (argc == 1) {
+            print_usage(argv[0]);
+            return 1;
+        }
 
-        printf("Input:");
-        fgets(buffer, MAX_LINE, stdin);
+        if (strcmp(argv[1], "list") == 0) {
+            if (argc != 2) {
+                fputs("Warning: Ignoring additional arguments\n", stderr);
+            }
+            strcpy(buffer, argv[1]);
+            goto write;
+        }
 
-        write_string(conn_s, buffer, strlen(buffer));
-        read_string(conn_s, buffer, MAX_LINE - 1, 0);
+        if (strcmp(argv[1], "add") == 0) {
+            if (argc != 6) {
+                printf("Usage: %s add key website username password", argv[0]);
+                return 1;
+            }
+            sprintf(buffer, "%s %s %s %s %s %s", argv[1], argv[2], argv[3], argv[4], argv[5], argv[6]);
+            goto write;
+        }
 
+        if (strcmp(argv[1], "get") == 0) {
+            if (argc != 3) {
+                printf("Usage: %s get key", argv[0]);
+                return 1;
+            }
+            sprintf(buffer, "%s %s", argv[1], argv[2]);
+            goto write;
+        }
 
-        fputs(buffer, stdout);
+        write:
+        strcat(buffer, "\n");
+        write_string(client_conn, buffer, strlen(buffer));
+        read_string(client_conn, buffer, MAX_LINE - 1, 0);
+        puts(buffer);
+        return 0;
     }
 }
 
@@ -373,8 +389,6 @@ int starts_with(char *string, char *prefix) {
 void list_passwords(char *buffer, cJSON *json) {
     cJSON *passwords = cJSON_GetObjectItem(json, "passwords");
     memset(buffer, 0, MAX_LINE);
-
-    printf("Hello\n");
     cJSON *current_element = NULL;
     cJSON_ArrayForEach(current_element, passwords) {
         char *line = malloc(MAX_LINE * sizeof(char));
@@ -383,6 +397,9 @@ void list_passwords(char *buffer, cJSON *json) {
         sprintf(line, "%s:%s:%s\n", current_element->string, cJSON_GetStringValue(username_item),
                 cJSON_GetStringValue(website_item));
         strcat(buffer, line);
+    }
+    if (strlen(buffer) == 0) {
+        strcpy(buffer, "No saved passwords.");
     }
 }
 
@@ -437,6 +454,7 @@ void add_entry(char *buffer, cJSON *json, AES_KEY enc_key) {
     free(website);
     free(username);
     free(pass);
+    strcpy(buffer, "ok");
 }
 
 void get_entry(char *buffer, cJSON *json, AES_KEY dec_key) {
@@ -459,4 +477,12 @@ void get_entry(char *buffer, cJSON *json, AES_KEY dec_key) {
     } else {
         strcpy(buffer, "Unknown name");
     }
+}
+
+void print_usage(char *prog_name) {
+    printf("Usage: %s [list, add, get] ...\n", prog_name);
+}
+
+void cleanup() {
+    close(client_conn);
 }
